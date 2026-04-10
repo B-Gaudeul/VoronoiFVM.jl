@@ -5,12 +5,13 @@ using OrdinaryDiffEqSDIRK
 
 using Plots
 
-nref = 0
-Plotter = Plots
-verbose = false
-unknown_storage = :sparse
-assembly = :edgewise
-time_embedding = :none
+function main(;
+    nref = 0,
+    Plotter = Plots,
+    verbose = false,
+    unknown_storage = :sparse,
+    assembly = :edgewise,
+    time_embedding = :none)
 
 L = 1.0
 R = 1.0
@@ -83,3 +84,13 @@ problem = ODEProblem(sys,inival,(0,tend); params = [1.0])
 odesol = solve(problem,ImplicitEuler())
 tsol=reshape(odesol,sys)
 steadystate=tsol.u[end]
+
+end
+
+for unknown_storage in (:sparse, :dense)
+    for assembly in (:edgewise, :cellwise)
+        for time_embedding in (:none, :builtin, :ordinarydiffeq)
+            main(; unknown_storage, assembly, time_embedding)
+        end
+    end
+end
