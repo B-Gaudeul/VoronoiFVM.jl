@@ -72,7 +72,6 @@ function main(;
     enable_species!(sys, 2, [1])
     factory = TestFunctionFactory(sys)
     measurement_testfunction = testfunction(factory, [excited_bc], [meas_bc])
-    @show measurement_testfunction
 
     tend = 1.e5
     if time_embedding == :builtin
@@ -119,7 +118,7 @@ function main(;
     meas_sin = zeros(1)
     meas_tran(meas_tran_ref, steadystate)
     meas_stdy(meas_stdy_ref, steadystate)
-    @show meas_tran_ref, meas_stdy_ref, integrate(sys, measurement_testfunction, steadystate, params = [1.0])[excited_spec]
+    
     # Create Impeadancs system from steady state
     isys = VoronoiFVM.ImpedanceSystem(sys, steadystate)
 
@@ -213,8 +212,9 @@ function main(;
         #and use the results to compute the impedance using finite difference approximation
 
         time_impedance = zeros(ComplexF64,Ndt)
-
-        @show length(tsol_cos.t) Ndt*(N_periodes+1) tend/dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
+        if ω ≈ ω0
+            @show length(tsol_cos.t) Ndt*(N_periodes+1) tend/dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
+        end
         for i in 1:Ndt
             j=Ndt*(N_periodes)+i
             time = tsol_cos.t[j]
