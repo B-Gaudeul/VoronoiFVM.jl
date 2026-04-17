@@ -7,8 +7,6 @@ using ExtendableGrids: geomspace, simplexgrid
 using GridVisualize
 using OrdinaryDiffEqSDIRK
 
-using Plots
-
 function main(;
     nref = 0,
     Plotter = nothing,
