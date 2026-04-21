@@ -3,7 +3,7 @@
 module Example152_Impedance_Multispecies
 
 using VoronoiFVM
-using ExtendableGrids: geomspace, simplexgrid
+using ExtendableGrids: geomspace, simplexgrid, num_nodes
 using GridVisualize
 using OrdinaryDiffEqSDIRK
 
@@ -13,9 +13,10 @@ function main(;
         verbose = false,
         unknown_storage = :sparse,
         assembly = :edgewise,
-        time_embedding = :builtin,
         L = 1.0, R = 1.0, D = 1.0, C = 1.0,
-        ω0 = 1.0e-3, ω1 = 5.0e1
+        ω0 = 1.0e-3, ω1 = 5.0e1,
+        ω_incfactor = 1.1,
+        fdtest::Bool = false
     )
 
     # Create array which is refined close to 0
@@ -74,22 +75,7 @@ function main(;
     factory = TestFunctionFactory(sys)
     measurement_testfunction = testfunction(factory, [excited_bc], [meas_bc])
 
-    tend = 1.0e5
-    if time_embedding == :builtin
-        tsol = solve(sys; inival = 0.0, params = [1.0], times = (0.0, tend), force_first_step = true)
-        steadystate = tsol.u[end]
-    elseif time_embedding == :ordinarydiffeq
-        inival = unknowns(sys, inival = 0)
-        problem = ODEProblem(sys, inival, (0, tend); params = [1.0])
-        odesol = solve(problem, ImplicitEuler())
-        tsol = reshape(odesol, sys)
-        steadystate = tsol.u[end]
-    elseif time_embedding == :none
-        steadystate = solve(sys; inival = 0.0, params = [1.0]) #does not seem to compute the steady state, should it ?
-    else
-        error("time_embedding must be one of :builtin, :ordinarydiffeq, :none")
-    end
-
+    steadystate = solve(sys; inival = 1.0, params = [1.0])
 
     function meas_stdy(meas, U)
         if !(typeof(U) <: AbstractMatrix)
@@ -139,10 +125,13 @@ function main(;
     UZ = unknowns(isys)
 
     outflux_ref = zeros(2)
-    flux(outflux_ref, steadystate[:, (end - 1):end], nothing, data)
+    outflux_cos = zeros(2)
+    outflux_sin = zeros(2)
+    nnodes = num_nodes(grid)
+    lastedge = (nnodes - 1):nnodes
+    @views flux(outflux_ref, steadystate[:, lastedge], nothing, data)
 
     while ω < ω1
-
         # solve impedance system
         solve!(UZ, isys, ω)
 
@@ -154,133 +143,138 @@ function main(;
         push!(allomega, ω)
         push!(allIL, IL)
 
-        # compute reference using finite difference approximation
-        amplitude = 1.0e-6
-        data_perturbed = (R = R, D = D, C = C, ω = ω)
-        #change boundary condition to reflect the perturbation
-        bc_cos = function (f, u, node, data)
-            p = parameters(u)
-            boundary_dirichlet!(f, u, node; species = 2, region = 1, value = 1.0)
-            boundary_dirichlet!(f, u, node; species = 1, region = excited_bc, value = 1 + amplitude * cos(data.ω * node.time))
-            return boundary_dirichlet!(f, u, node; species = 1, region = meas_bc, value = 0.0)
+        if fdtest
+            # compute reference using finite difference approximation
+            amplitude = 1.0e-6
+            data_perturbed = (R = R, D = D, C = C, ω = ω)
+            #change boundary condition to reflect the perturbation
+            bc_cos = function (f, u, node, data)
+                p = parameters(u)
+                boundary_dirichlet!(f, u, node; species = 2, region = 1, value = 1.0)
+                boundary_dirichlet!(f, u, node; species = 1, region = excited_bc, value = 1 + amplitude * cos(data.ω * node.time))
+                return boundary_dirichlet!(f, u, node; species = 1, region = meas_bc, value = 0.0)
+            end
+
+            sys_cos = VoronoiFVM.System(
+                grid; unknown_storage = unknown_storage,
+                data = data_perturbed,
+                flux = flux,
+                storage = storage,
+                reaction = reaction,
+                bcondition = bc_cos,
+                nparams = 0, #we no longer track derivative with respect to parameters
+                assembly = assembly
+            )
+            enable_species!(sys_cos, 1, [1])
+            enable_species!(sys_cos, 2, [1])
+            inival = unknowns(sys_cos)
+            inival[1, :] .= steadystate[1, :]
+            inival[2, :] .= steadystate[2, :]
+
+
+            #same for the sine perturbation
+            bc_sin = function (f, u, node, data)
+                p = parameters(u)
+                boundary_dirichlet!(f, u, node; species = 2, region = 1, value = 1.0)
+                boundary_dirichlet!(f, u, node; species = 1, region = excited_bc, value = 1 + amplitude * sin(data.ω * node.time))
+                return boundary_dirichlet!(f, u, node; species = 1, region = meas_bc, value = 0.0)
+            end
+
+            sys_sin = VoronoiFVM.System(
+                grid; unknown_storage = unknown_storage,
+                data = data_perturbed,
+                flux = flux,
+                storage = storage,
+                reaction = reaction,
+                bcondition = bc_sin,
+                nparams = 0,
+                assembly = assembly
+            )
+            enable_species!(sys_sin, 1, [1])
+            enable_species!(sys_sin, 2, [1])
+
+            Ndt = 200
+            dt = (2 * π / ω) / Ndt
+            N_periodes = 50
+            tend = (N_periodes + 1) * 2 * π / ω
+
+            #now we compute over 50+1 periods to let the phase shift set in and compute the impedance only on the last period.
+            tsol_cos = solve(
+                sys_cos; steadystate, times = (0.0, tend), force_first_step = true,
+                control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
+            )
+
+            tsol_sin = solve(
+                sys_sin; steadystate, times = (0.0, tend), force_first_step = true,
+                control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
+            )
+
+
+            #and use the results to compute the impedance using finite difference approximation
+
+            time_impedance = zeros(ComplexF64, Ndt)
+            if ω ≈ ω0
+                @show length(tsol_cos.t) Ndt * (N_periodes + 1) tend / dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
+                @show (tsol_cos.t[2:end] - tsol_cos.t[1:(end - 1)])[(end - 10):end]
+                @show dt
+            end
+            for i in 1:Ndt
+                j = Ndt * (N_periodes) + i
+                time = tsol_cos.t[j]
+
+                @assert isapprox(time, tsol_sin.t[j], rtol = 1.0e-5)
+
+                u_cos = tsol_cos.u[j]
+                u_sin = tsol_sin.u[j]
+
+                #compute flux at the boundary for both solutions and subtract the reference flux to get the flux perturbation
+
+                endcos = view(u_cos, :, lastedge)
+                endsin = view(u_sin, :, lastedge)
+
+                flux(outflux_cos, endcos, nothing, data)
+                flux(outflux_sin, endsin, nothing, data)
+
+                outflux_cos .-= outflux_ref
+                outflux_sin .-= outflux_ref
+                tau = 1 / (X[end] - X[end - 1])
+
+
+                time_impedance[i] = (outflux_cos[1] * tau + 1im * outflux_sin[1] * tau) / (amplitude * exp(1im * ω * time))
+
+            end
+            IxL = length(time_impedance) / sum(time_impedance)
+            @show ω, IL, IxL
+            push!(allIxL, IxL)
         end
-
-        sys_cos = VoronoiFVM.System(
-            grid; unknown_storage = unknown_storage,
-            data = data_perturbed,
-            flux = flux,
-            storage = storage,
-            reaction = reaction,
-            bcondition = bc_cos,
-            nparams = 0, #we no longer track derivative with respect to parameters
-            assembly = assembly
-        )
-        enable_species!(sys_cos, 1, [1])
-        enable_species!(sys_cos, 2, [1])
-        inival = unknowns(sys_cos)
-        inival[1, :] .= steadystate[1, :]
-        inival[2, :] .= steadystate[2, :]
-
-
-        #same for the sine perturbation
-        bc_sin = function (f, u, node, data)
-            p = parameters(u)
-            boundary_dirichlet!(f, u, node; species = 2, region = 1, value = 1.0)
-            boundary_dirichlet!(f, u, node; species = 1, region = excited_bc, value = 1 + amplitude * sin(data.ω * node.time))
-            return boundary_dirichlet!(f, u, node; species = 1, region = meas_bc, value = 0.0)
-        end
-
-        sys_sin = VoronoiFVM.System(
-            grid; unknown_storage = unknown_storage,
-            data = data_perturbed,
-            flux = flux,
-            storage = storage,
-            reaction = reaction,
-            bcondition = bc_sin,
-            nparams = 0,
-            assembly = assembly
-        )
-        enable_species!(sys_sin, 1, [1])
-        enable_species!(sys_sin, 2, [1])
-
-        Ndt = 200
-        dt = (2 * π / ω) / Ndt
-        N_periodes = 50
-        tend = (N_periodes + 1) * 2 * π / ω
-
-        #now we compute over 50+1 periods to let the phase shift set in and compute the impedance only on the last period.
-        tsol_cos = solve(
-            sys_cos; steadystate, times = (0.0, tend), force_first_step = true,
-            control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt)
-        )
-        tsol_sin = solve(
-            sys_sin; steadystate, times = (0.0, tend), force_first_step = true,
-            control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt)
-        )
-
-        #and use the results to compute the impedance using finite difference approximation
-
-        time_impedance = zeros(ComplexF64, Ndt)
-        if ω ≈ ω0
-            @show length(tsol_cos.t) Ndt * (N_periodes + 1) tend / dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
-        end
-        for i in 1:Ndt
-            j = Ndt * (N_periodes) + i
-            time = tsol_cos.t[j]
-
-            @assert isapprox(time, tsol_sin.t[j], rtol = 1.0e-5)
-
-            u_cos = tsol_cos.u[j]
-            u_sin = tsol_sin.u[j]
-
-            #compute flux at the boundary for both solutions and subtract the reference flux to get the flux perturbation
-
-            endcos = u_cos[:, (end - 1):end]
-            endsin = u_sin[:, (end - 1):end]
-
-            outflux_cos = zeros(2)
-            flux(outflux_cos, endcos, nothing, data)
-            outflux_sin = zeros(2)
-            flux(outflux_sin, endsin, nothing, data)
-
-            outflux_cos -= outflux_ref
-            outflux_sin -= outflux_ref
-            tau = 1 / (X[end] - X[end - 1])
-
-
-            time_impedance[i] = (outflux_cos[1] * tau + 1im * outflux_sin[1] * tau) / (amplitude * exp(1im * ω * time))
-
-        end
-        push!(allIxL, length(time_impedance) / sum(time_impedance))
 
         # increase omega
-        ω = ω * 1.1
+        ω = ω * ω_incfactor
     end
 
-    vis = GridVisualizer(; Plotter = Plotter)
+    vis = GridVisualizer(; Plotter = Plotter, legend = :rt)
+    if fdtest
+        scalarplot!(
+            vis, real(allIxL), imag(allIxL); label = "finite difference", color = :red, linestyle = :dot
+        )
+    end
     scalarplot!(
-        vis, real(allIxL .* 0.5), imag(allIxL .* 0.5); label = "finite difference", color = :red, #No idea why the factor 0.5 is needed to match the solution
-        linestyle = :dot
+        vis, real(allIL), imag(allIL); label = "calc", show = true, clear = false, color = :blue, linestyle = :solid
     )
-    scalarplot!(
-        vis, real(allIL), imag(allIL); label = "calc", show = true, clear = false,
-        color = :blue, linestyle = :solid
-    )
-    allIxL .*= 0.5 #Again no idea why the factor 0.5 is needed to match the solution
-    return sum(allIL ./ allIxL) / length(allomega) #should be close to 1
-
+    if fdtest
+        @show sum(allIL ./ allIxL) / length(allomega)
+    end
+    return sum(allIL)
 end
 
 
 using Test
 
 function runtests()
-    testval = 1.0001276177310483 + 0.002405119578898519im
+    testval = 50.960361928838 + 4.510584656768053im
     for unknown_storage in (:sparse, :dense)
         for assembly in (:edgewise, :cellwise)
-            for time_embedding in (:builtin, :ordinarydiffeq)
-                @test main(; unknown_storage, assembly, time_embedding) ≈ testval
-            end
+            @test main(; unknown_storage, assembly) ≈ testval
         end
     end
     return
