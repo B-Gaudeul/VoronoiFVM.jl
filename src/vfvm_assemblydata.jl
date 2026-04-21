@@ -292,9 +292,9 @@ See [`assemble_res_jac`](@ref) for more explanations.
                 if isnodespecies(system, jspec, K)
                     asm_jac(idof, jdof, ispec, jspec)
                 end
-                for iparam in 1:(system.num_parameters)
-                    asm_param(K, ispec, iparam)
-                end
+            end
+            for iparam in 1:(system.num_parameters)
+                asm_param(K, ispec, iparam)
             end
         end
     end
