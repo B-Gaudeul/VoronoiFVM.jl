@@ -35,7 +35,7 @@ function main(;
 
     X = geomspace(0, L, h0, h1)
 
-    # Create discretitzation grid
+    # Create discretization grid
     grid = simplexgrid(X)
 
     # Create and fill data
@@ -116,7 +116,7 @@ function main(;
     meas_tran(meas_tran_ref, steadystate)
     meas_stdy(meas_stdy_ref, steadystate)
 
-    # Create Impeadancs system from steady state
+    # Create impedance system from steady state
     isys = VoronoiFVM.ImpedanceSystem(sys, steadystate)
 
     # Prepare recording of impedance results
@@ -179,7 +179,7 @@ function main(;
             enable_species!(sys_cos, 2, [1])
 
 
-            #same for the sine perturbation
+            # Same for the sine perturbation
             bc_sin = function (f, u, node, data)
                 p = parameters(u)
                 boundary_dirichlet!(f, u, node; species = 2, region = 1, value = 1.0)
@@ -215,7 +215,7 @@ function main(;
             )
 
 
-            #and use the results to compute the impedance using finite difference approximation
+            # And use the results to compute the impedance using finite difference approximation
 
             time_impedance = zeros(ComplexF64, Ndt)
 
