@@ -1,4 +1,11 @@
-# same as example 150 but with two species and a different system. This time the exact solution is not know thus we compare with finite difference approximation of the impedance.
+# same as example 150 but with two species and a different system. This time the exact solution is not known, thus we compare with finite-difference approximation of the impedance.
+# PDE system on x∈(0,L):
+#   C∂ₜu₁ - ∂ₓ(D∂ₓ(u₁u₂)) + (Ru₁u₂ - u₂) = 0
+#   C∂ₜu₂ - ∂ₓ(D∂ₓu₂)      + Ru₁u₂        = 0
+# consistent with VoronoiFVM convention ∂ₜs(u)+∇⋅j(u)+r(u)=0 and diffusion flux j=-D∇(⋅).
+# Boundary conditions used here:
+#   Dirichlet: u₂(0,t)=1, u₁(0,t)=excitation(t), u₁(L,t)=0
+#   Neumann (natural, zero flux): D∂ₓu₂(L,t)=0
 
 module Example152_Impedance_Multispecies
 
@@ -6,6 +13,7 @@ using VoronoiFVM
 using ExtendableGrids: geomspace, simplexgrid, num_nodes
 using GridVisualize
 using OrdinaryDiffEqSDIRK
+using Printf
 
 function main(;
         nref = 0,
@@ -16,7 +24,9 @@ function main(;
         L = 1.0, R = 1.0, D = 1.0, C = 1.0,
         ω0 = 1.0e-3, ω1 = 5.0e1,
         ω_incfactor = 1.1,
-        fdtest::Bool = false
+        N_periods = 50,
+        Ndt = 200,
+        fdtest::Bool = true #false
     )
 
     # Create array which is refined close to 0
@@ -131,6 +141,9 @@ function main(;
     lastedge = (nnodes - 1):nnodes
     @views flux(outflux_ref, steadystate[:, lastedge], nothing, data)
 
+    if verbose
+        println("Stationary computation done, starting impedance computation.")
+    end
     while ω < ω1
         # solve impedance system
         solve!(UZ, isys, ω)
@@ -138,7 +151,9 @@ function main(;
         # calculate approximate solution
         # obtain measurement in frequency  domain
         IL = impedance(isys, ω, steadystate, dmeas_stdy, dmeas_tran)
-
+        if verbose && ω ≈ ω0
+             @printf("Successfully calculated impedance (prints only for the first frequency)")
+        end
         # record approximate solution
         push!(allomega, ω)
         push!(allIL, IL)
@@ -193,12 +208,10 @@ function main(;
             enable_species!(sys_sin, 1, [1])
             enable_species!(sys_sin, 2, [1])
 
-            Ndt = 200
             dt = (2 * π / ω) / Ndt
-            N_periodes = 50
-            tend = (N_periodes + 1) * 2 * π / ω
+            tend = (N_periods + 1) * 2 * π / ω
 
-            #now we compute over 50+1 periods to let the phase shift set in and compute the impedance only on the last period.
+            # Compute a sufficiently long transient and evaluate the impedance on the last period.
             tsol_cos = solve(
                 sys_cos; steadystate, times = (0.0, tend), force_first_step = true,
                 control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
@@ -213,13 +226,15 @@ function main(;
             #and use the results to compute the impedance using finite difference approximation
 
             time_impedance = zeros(ComplexF64, Ndt)
-            if ω ≈ ω0
-                @show length(tsol_cos.t) Ndt * (N_periodes + 1) tend / dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
+            if ω ≈ ω0 && verbose
+                @show length(tsol_cos.t) Ndt * (N_periods + 1) tend / dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
                 @show (tsol_cos.t[2:end] - tsol_cos.t[1:(end - 1)])[(end - 10):end]
                 @show dt
             end
+
+            j_last_period = length(tsol_cos.t) - Ndt
             for i in 1:Ndt
-                j = Ndt * (N_periodes) + i
+                j = j_last_period + i
                 time = tsol_cos.t[j]
 
                 @assert isapprox(time, tsol_sin.t[j], rtol = 1.0e-5)
@@ -244,7 +259,17 @@ function main(;
 
             end
             IxL = length(time_impedance) / sum(time_impedance)
-            @show ω, IL, IxL
+            if verbose
+                 ratio = IL / IxL
+
+                @printf(
+                    "Finite difference approximation of impedance at ω = %10.5g: %10.5g%+10.5gi, calculated impedance: %10.5g%+10.5gi, ratio distance to one: %10.5g\n",
+                    ω,
+                    real(IxL), imag(IxL),
+                    real(IL), imag(IL),
+                    abs(ratio - 1.0)
+                )
+            end
             push!(allIxL, IxL)
         end
 
@@ -262,7 +287,10 @@ function main(;
         vis, real(allIL), imag(allIL); label = "calc", show = true, clear = false, color = :blue, linestyle = :solid
     )
     if fdtest
-        @show sum(allIL ./ allIxL) / length(allomega)
+        println("Ratio of calculated impedance to finite difference impedance, should be close to one: ")
+        avg_ratio = sum(allIL ./ allIxL) / length(allomega)
+        @printf("Minimum distance to one: %.3e, Average value: %.3g%+.3gi, Maximum distance to one: %.3e\n", minimum(abs.(allIL ./ allIxL .- 1)), real(avg_ratio), imag(avg_ratio), maximum(abs.(allIL ./ allIxL .- 1)))
+        #@show minimum(abs.(allIL ./ allIxL)), sum(allIL ./ allIxL) / length(allomega), maximum(abs.(allIL ./ allIxL))
     end
     return sum(allIL)
 end
