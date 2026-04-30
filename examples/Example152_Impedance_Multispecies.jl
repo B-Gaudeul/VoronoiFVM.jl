@@ -24,7 +24,7 @@ function main(;
         L = 1.0, R = 1.0, D = 1.0, C = 1.0,
         ω0 = 1.0e-3, ω1 = 5.0e1,
         ω_incfactor = 1.1,
-        N_periods = 50,
+        N_periods = :auto,
         Ndt = 200,
         fdtest::Bool = true #false
     )
@@ -209,25 +209,65 @@ function main(;
             enable_species!(sys_sin, 2, [1])
 
             dt = (2 * π / ω) / Ndt
-            tend = (N_periods + 1) * 2 * π / ω
+            period = 2 * π / ω
+            control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
 
-            # Compute a sufficiently long transient and evaluate the impedance on the last period.
-            tsol_cos = solve(
-                sys_cos; steadystate, times = (0.0, tend), force_first_step = true,
-                control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
-            )
+            # Either run a fixed number of periods or use a fixed-point iteration
+            # on the period map (automatic mode).
+            tsol_cos = nothing
+            tsol_sin = nothing
+            if N_periods == :auto
+                max_periods = 200
+                # Use several periods before checking convergence.
+                min_periods = 3
+                cycle_rtol = 1.0e-7
+                cycle_atol = 1.0e-9
 
-            tsol_sin = solve(
-                sys_sin; steadystate, times = (0.0, tend), force_first_step = true,
-                control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
-            )
+                u0_cos = copy(steadystate)
+                u0_sin = copy(steadystate)
+                converged = false
+
+                for iperiod in 1:max_periods
+                    tsol_cos = solve(
+                        sys_cos; inival = u0_cos, times = (0.0, period), force_first_step = true, control = control
+                    )
+                    tsol_sin = solve(
+                        sys_sin; inival = u0_sin, times = (0.0, period), force_first_step = true, control = control
+                    )
+
+                    u1_cos = tsol_cos[end]
+                    u1_sin = tsol_sin[end]
+
+                    if iperiod >= min_periods
+                        conv_cos = isapprox(dofs(u1_cos), dofs(u0_cos), rtol = cycle_rtol, atol = cycle_atol)
+                        conv_sin = isapprox(dofs(u1_sin), dofs(u0_sin), rtol = cycle_rtol, atol = cycle_atol)
+                        if conv_cos && conv_sin
+                            converged = true
+                            break
+                        end
+                    end
+
+                    u0_cos .= u1_cos
+                    u0_sin .= u1_sin
+                end
+                @assert converged "Automatic period selection did not converge for ω=$ω within $max_periods periods."
+            else
+                tend = (N_periods + 1) * period
+                # Compute a sufficiently long transient and evaluate the impedance on the last period.
+                tsol_cos = solve(
+                    sys_cos; steadystate, times = (0.0, tend), force_first_step = true, control = control
+                )
+                tsol_sin = solve(
+                    sys_sin; steadystate, times = (0.0, tend), force_first_step = true, control = control
+                )
+            end
 
 
             #and use the results to compute the impedance using finite difference approximation
 
             time_impedance = zeros(ComplexF64, Ndt)
             if ω ≈ ω0 && verbose
-                @show length(tsol_cos.t) Ndt * (N_periods + 1) tend / dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
+                @show length(tsol_cos.t) Ndt + 1 period / dt
                 @show (tsol_cos.t[2:end] - tsol_cos.t[1:(end - 1)])[(end - 10):end]
                 @show dt
             end
