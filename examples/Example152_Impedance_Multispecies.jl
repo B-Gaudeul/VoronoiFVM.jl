@@ -24,18 +24,20 @@ function main(;
         L = 1.0, R = 1.0, D = 1.0, C = 1.0,
         ω0 = 1.0e-3, ω1 = 5.0e1,
         ω_incfactor = 1.1,
-        N_preliminary_periods = 2,
-        Ndt = 300,
+        N_preliminary_periods::I = 2,
+        Ndt::I = 300,
         fdtest::Bool = false
-    )
-
+    ) where I<:Integer
+    @assert N_preliminary_periods >= 0 "preliminary periods should be non-negative"
+    @assert Ndt > 10 "Ndt should be at least 10 to have a reasonable sampling of the period"
+    
     # Create array which is refined close to 0
     h0 = 0.005 / 2.0^nref
     h1 = 0.1 / 2.0^nref
 
     X = geomspace(0, L, h0, h1)
 
-    # Create discretitzation grid
+    # Create discretization grid
     grid = simplexgrid(X)
 
     # Create and fill data
@@ -213,8 +215,8 @@ function main(;
                 sys_sin; inival = steadystate, times = (0.0, tend), force_first_step = true,
                 control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
             )
-
-
+            @assert length(tsol_cos.t) >= Ndt "Need at least Ndt points to sample last period"
+            @assert length(tsol_sin.t) == length(tsol_cos.t) "Cos and sin solutions should have the same time points"
             #and use the results to compute the impedance using finite difference approximation
 
             time_impedance = zeros(ComplexF64, Ndt)
