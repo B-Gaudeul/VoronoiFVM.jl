@@ -179,7 +179,7 @@ function main(;
             enable_species!(sys_cos, 2, [1])
 
 
-            # Same for the sine perturbation
+            #same for the sine perturbation
             bc_sin = function (f, u, node, data)
                 p = parameters(u)
                 boundary_dirichlet!(f, u, node; species = 2, region = 1, value = 1.0)
@@ -215,7 +215,7 @@ function main(;
             )
 
 
-            # And use the results to compute the impedance using finite difference approximation
+            #and use the results to compute the impedance using finite difference approximation
 
             time_impedance = zeros(ComplexF64, Ndt)
 
