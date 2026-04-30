@@ -239,8 +239,8 @@ function main(;
                     u1_sin = tsol_sin[end]
 
                     if iperiod >= min_periods
-                        conv_cos = isapprox(dofs(u1_cos), dofs(u0_cos), rtol = cycle_rtol, atol = cycle_atol)
-                        conv_sin = isapprox(dofs(u1_sin), dofs(u0_sin), rtol = cycle_rtol, atol = cycle_atol)
+                        conv_cos = isapprox(VoronoiFVM.dofs(u1_cos), VoronoiFVM.dofs(u0_cos), rtol = cycle_rtol, atol = cycle_atol)
+                        conv_sin = isapprox(VoronoiFVM.dofs(u1_sin), VoronoiFVM.dofs(u0_sin), rtol = cycle_rtol, atol = cycle_atol)
                         if conv_cos && conv_sin
                             converged = true
                             break
