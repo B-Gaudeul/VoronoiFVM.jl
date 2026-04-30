@@ -24,9 +24,9 @@ function main(;
         L = 1.0, R = 1.0, D = 1.0, C = 1.0,
         ω0 = 1.0e-3, ω1 = 5.0e1,
         ω_incfactor = 1.1,
-        N_periods = 50,
-        Ndt = 200,
-        fdtest::Bool = true #false
+        N_preliminary_periods = 2,
+        Ndt = 300,
+        fdtest::Bool = false
     )
 
     # Create array which is refined close to 0
@@ -141,9 +141,6 @@ function main(;
     lastedge = (nnodes - 1):nnodes
     @views flux(outflux_ref, steadystate[:, lastedge], nothing, data)
 
-    if verbose
-        println("Stationary computation done, starting impedance computation.")
-    end
     while ω < ω1
         # solve impedance system
         solve!(UZ, isys, ω)
@@ -151,9 +148,7 @@ function main(;
         # calculate approximate solution
         # obtain measurement in frequency  domain
         IL = impedance(isys, ω, steadystate, dmeas_stdy, dmeas_tran)
-        if verbose && ω ≈ ω0
-             @printf("Successfully calculated impedance (prints only for the first frequency)")
-        end
+
         # record approximate solution
         push!(allomega, ω)
         push!(allIL, IL)
@@ -182,9 +177,6 @@ function main(;
             )
             enable_species!(sys_cos, 1, [1])
             enable_species!(sys_cos, 2, [1])
-            inival = unknowns(sys_cos)
-            inival[1, :] .= steadystate[1, :]
-            inival[2, :] .= steadystate[2, :]
 
 
             #same for the sine perturbation
@@ -208,17 +200,17 @@ function main(;
             enable_species!(sys_sin, 1, [1])
             enable_species!(sys_sin, 2, [1])
 
-            dt = (2 * π / ω) / Ndt
-            tend = (N_periods + 1) * 2 * π / ω
+            dt = (2 * π / ω) / (Ndt-1.e-8) # without the perturbation we end up sometimes with one extra time step at the end.
+            tend = (N_preliminary_periods + 1) * 2 * π / ω
 
             # Compute a sufficiently long transient and evaluate the impedance on the last period.
             tsol_cos = solve(
-                sys_cos; steadystate, times = (0.0, tend), force_first_step = true,
+                sys_cos; inival = steadystate, times = (0.0, tend), force_first_step = true,
                 control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
             )
 
             tsol_sin = solve(
-                sys_sin; steadystate, times = (0.0, tend), force_first_step = true,
+                sys_sin; inival = steadystate, times = (0.0, tend), force_first_step = true,
                 control = VoronoiFVM.SolverControl(Δt_max = dt, Δt_min = dt, Δt = dt, Δu_opt = 1.0e10)
             )
 
@@ -226,11 +218,6 @@ function main(;
             #and use the results to compute the impedance using finite difference approximation
 
             time_impedance = zeros(ComplexF64, Ndt)
-            if ω ≈ ω0 && verbose
-                @show length(tsol_cos.t) Ndt * (N_periods + 1) tend / dt #for unknown reasons we seem to have 10 extra time steps, which is not a problem but should be investigated at some point until then, I keep the @show as a reminder to investigate this issue
-                @show (tsol_cos.t[2:end] - tsol_cos.t[1:(end - 1)])[(end - 10):end]
-                @show dt
-            end
 
             j_last_period = length(tsol_cos.t) - Ndt
             for i in 1:Ndt
