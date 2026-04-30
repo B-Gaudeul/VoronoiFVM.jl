@@ -129,6 +129,7 @@ function main(;
     # for exact data
     allIx0 = zeros(Complex{Float64}, 0)
     allIxL = zeros(Complex{Float64}, 0)
+    all_used_periods = zeros(Int, 0)
 
     ω = ω0
 
@@ -216,6 +217,7 @@ function main(;
             # on the period map (automatic mode).
             tsol_cos = nothing
             tsol_sin = nothing
+            used_periods = 0
             if N_periods == :auto
                 max_periods = 200
                 # Use several periods before checking convergence.
@@ -243,6 +245,7 @@ function main(;
                         conv_sin = isapprox(VoronoiFVM.dofs(u1_sin), VoronoiFVM.dofs(u0_sin), rtol = cycle_rtol, atol = cycle_atol)
                         if conv_cos && conv_sin
                             converged = true
+                            used_periods = iperiod
                             break
                         end
                     end
@@ -252,6 +255,7 @@ function main(;
                 end
                 @assert converged "Automatic period selection did not converge for ω=$ω within $max_periods periods."
             else
+                used_periods = N_periods + 1
                 tend = (N_periods + 1) * period
                 # Compute a sufficiently long transient and evaluate the impedance on the last period.
                 tsol_cos = solve(
@@ -261,6 +265,7 @@ function main(;
                     sys_sin; steadystate, times = (0.0, tend), force_first_step = true, control = control
                 )
             end
+            push!(all_used_periods, used_periods)
 
 
             #and use the results to compute the impedance using finite difference approximation
@@ -300,13 +305,15 @@ function main(;
             end
             IxL = length(time_impedance) / sum(time_impedance)
             if verbose
-                 ratio = IL / IxL
+                ratio = IL / IxL
 
                 @printf(
-                    "Finite difference approximation of impedance at ω = %10.5g: %10.5g%+10.5gi, calculated impedance: %10.5g%+10.5gi, ratio distance to one: %10.5g\n",
+                    "ω = %10.5g, periods = %4d, finite difference impedance: %10.5g%+10.5gi, calculated impedance: %10.5g%+10.5gi, ratio: %10.5g%+10.5gi, |ratio-1|: %10.5g\n",
                     ω,
+                    used_periods,
                     real(IxL), imag(IxL),
                     real(IL), imag(IL),
+                    real(ratio), imag(ratio),
                     abs(ratio - 1.0)
                 )
             end
