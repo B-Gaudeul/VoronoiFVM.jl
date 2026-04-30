@@ -118,7 +118,7 @@ function main(;
     meas_tran(meas_tran_ref, steadystate)
     meas_stdy(meas_stdy_ref, steadystate)
 
-    # Create Impeadancs system from steady state
+    # Create impedance system from steady state
     isys = VoronoiFVM.ImpedanceSystem(sys, steadystate)
 
     # Prepare recording of impedance results
