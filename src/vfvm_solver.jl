@@ -306,7 +306,7 @@ function solve_transient!(
         if control.log
             push!(allhistory, solution.history)
             push!(allhistory.times, lambdas[1])
-            Δu = control.delta(state.system, solution, oldsolution, lambdas[1], 0)
+            Δu = timestep_delta(control, state.system, solution, oldsolution, lambdas[1], 0)
             push!(allhistory.updates, Δu)
         end
         oldsolution .= solution
@@ -375,7 +375,7 @@ function solve_transient!(
                     errored = true
                 end
                 if solved
-                    Δu = control.delta(state.system, solution, oldsolution, λ, Δλ)
+                    Δu = timestep_delta(control, state.system, solution, oldsolution, λ, Δλ)
                     if Δu > Δu_max_factor * Δu_opt
                         solved = false
                     end
@@ -620,7 +620,8 @@ Keyword arguments:
   - `pre` (default: `(sol,t)->nothing` ):  callback invoked before each time step
   - `post`  (default:  `(sol,oldsol, t, Δt)->nothing` ): callback invoked after each time step
   - `sample` (default:  `(sol,t)->nothing` ): callback invoked after timestep for all times in `times[2:end]`.
-  - `delta` (default:  `(system, u,v,t, Δt)->norm(sys,u-v,Inf)` ):  Value  used to control the time step size `Δu`
+  - `delta` (default: `nothing`): Optional custom value used to control the time step size `Δu`
+  - `delta_norm` (default: `:Linfty`): Built-in estimator choice (`:L1`, `:L2`, `:Linfty`), any positive `Real` for `L^p`, or metric function `(system,u,v,t,Δt)->Δu`
   Step size control is performed based on the parameters `Δt, Δt_max, Δt_min, Δt_grow, Δt_decrease, Δu_opt, Δu_max_factor`.
   If `control.handle_exceptions` is true, if time step solution  throws an error,
   stepsize  is lowered, and  step solution is called again with a smaller time value.

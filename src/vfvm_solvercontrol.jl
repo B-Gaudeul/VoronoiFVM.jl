@@ -244,10 +244,21 @@ Base.@kwdef mutable struct SolverControl
     sample::Function = function (sol, t) end
 
     """
+    Norm/metric used by the default time step error estimator.
+    Supported choices are:
+    - `:L1`, `:L2`, `:Linfty`
+    - any positive `Float64`/`Real` interpreted as `L^p`
+    - a function `(system, u, v, t, Δt) -> Δu`
+    """
+    delta_norm::Union{Symbol, Float64, Function} = :Linfty
+
+    """
     Time step error estimator. A function `Δu=delta(system,u,uold,t,Δt)` to
     calculate `Δu`.
+    If this is `nothing`, the built-in estimator selected by
+    `delta_norm` is used.
     """
-    delta::Function = (system, u, v, t, Δt) -> norm(system, u - v, Inf)
+    delta::Union{Function, Nothing} = nothing
 
     # deprecated entries
     tol_absolute::Union{Float64, Nothing} = nothing
@@ -331,3 +342,41 @@ end
 Legacy name of SolverControl
 """
 const NewtonControl = SolverControl
+
+function timestep_norm(system, u, v, normspec::Symbol)
+    d = u - v
+    if normspec == :L1
+        return norm(system, d, 1)
+    elseif normspec == :L2
+        return norm(system, d, 2)
+    elseif normspec == :Linfty
+        return norm(system, d, Inf)
+    else
+        throw(ArgumentError("Unsupported delta_norm=$(normspec). Supported: :L1, :L2, :Linfty, p::Real, or Function"))
+    end
+end
+
+function timestep_delta(control::SolverControl, system, u, v, t, Δt)
+    if !isnothing(control.delta)
+        return control.delta(system, u, v, t, Δt)
+    end
+    normspec = control.delta_norm
+    if normspec isa Symbol
+        return timestep_norm(system, u, v, normspec)
+    elseif normspec isa Real
+        if normspec <= 0
+            throw(ArgumentError("delta_norm as Real must be > 0, got $(normspec)"))
+        end
+        # Fast-path common exponents through specialized norm calls.
+        if isapprox(normspec, 1; atol = 0.0, rtol = 0.0)
+            return timestep_norm(system, u, v, :L1)
+        elseif isapprox(normspec, 2; atol = 0.0, rtol = 0.0)
+            return timestep_norm(system, u, v, :L2)
+        elseif isinf(normspec)
+            return timestep_norm(system, u, v, :Linfty)
+        end
+        return norm(system, u - v, normspec)
+    else
+        return normspec(system, u, v, t, Δt)
+    end
+end
