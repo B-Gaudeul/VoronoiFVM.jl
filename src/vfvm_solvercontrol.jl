@@ -340,6 +340,14 @@ function teval_timesteps!(control)
     return control
 end
 
+function _validate_timestep_mode(control)
+    mode = control.timestep_mode
+    if mode ∉ (:adaptive, :fixed, :teval)
+        throw(ArgumentError("Unsupported timestep_mode=$(repr(mode)). Use :adaptive, :fixed, or :teval."))
+    end
+    return mode
+end
+
 # function Base.show(io::IO, this::SolverControl)
 #     for name in fieldnames(typeof(this))
 #         println(io,"$(lpad(name,20)) = $(getfield(this,name))")

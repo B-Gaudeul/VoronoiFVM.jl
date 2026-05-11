@@ -254,6 +254,7 @@ function solve_transient!(
 
     # rounding in output
     rd(x) = round(x; sigdigits = 5)
+    _validate_timestep_mode(control)
 
     # Set initial value of Δλ etc
     if transient # λ is time

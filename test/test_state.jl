@@ -42,8 +42,17 @@ function main(; unknown_storage = :dense)
 
     teval_control = SolverControl()
     teval_timesteps!(teval_control)
+    teval_control.Δt = 1.0e-3
     tsol_teval = solve(sys; inival = 0.0, times = [0.0, 0.1, 0.2], control = teval_control)
     @test length(tsol_teval.t) == 3
+
+    fixed_control = SolverControl()
+    fixed_timesteps!(fixed_control, 0.03)
+    tsol_fixed = solve(sys; inival = 0.0, times = (0.0, 0.1), control = fixed_control)
+    @test length(tsol_fixed.t) == 5
+
+    invalid_control = SolverControl(timestep_mode = :bad_mode)
+    @test_throws ArgumentError solve(sys; inival = 0.0, times = (0.0, 0.1), control = invalid_control)
     return nothing
 
 end
