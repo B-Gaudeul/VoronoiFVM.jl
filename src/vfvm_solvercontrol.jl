@@ -12,6 +12,13 @@ $(TYPEDFIELDS)
 """
 Base.@kwdef mutable struct SolverControl
     """
+    Time stepping mode for transient and embedding solves.
+    - `:adaptive` (default): adaptive step-size control based on `delta`.
+    - `:fixed`: keep the current step size fixed within each interval.
+    - `:teval`: take exactly one step per interval in `times` / embedding values.
+    """
+    timestep_mode::Symbol = :adaptive
+    """
     Verbosity control. A collection of output categories is given in a string composed of the
     following letters:
     -  a: allocation warnings
@@ -311,11 +318,25 @@ Modify control data such that the time steps are fixed to a
 geometric sequence such that Δt_new=Δt_old*grow
 """
 function fixed_timesteps!(control, Δt; grow = 1.0)
+    control.timestep_mode = :fixed
     control.Δt = Δt
     control.Δt_max = Δt
     control.Δt_min = Δt
     control.Δt_grow = grow
     control.Δu_opt = floatmax()
+    return control
+end
+
+"""
+````
+teval_timesteps!(control)
+````
+
+Modify control data such that exactly one implicit Euler step is taken per
+interval in the given evaluation times.
+"""
+function teval_timesteps!(control)
+    control.timestep_mode = :teval
     return control
 end
 

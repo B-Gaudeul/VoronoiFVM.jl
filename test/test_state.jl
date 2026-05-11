@@ -39,6 +39,11 @@ function main(; unknown_storage = :dense)
     xsol3 = solve!(state; inival = 0.0, times = [0.0, 0.1, 0.2], control)
     @test xsol3.u[end] ≈ xsol2.u[end]
     @test xsol3.u[end] ≈ tsol3.u[end]
+
+    teval_control = SolverControl()
+    teval_timesteps!(teval_control)
+    tsol_teval = solve(sys; inival = 0.0, times = [0.0, 0.1, 0.2], control = teval_control)
+    @test length(tsol_teval.t) == 3
     return nothing
 
 end
