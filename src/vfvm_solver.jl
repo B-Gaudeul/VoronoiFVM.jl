@@ -254,6 +254,7 @@ function solve_transient!(
 
     # rounding in output
     rd(x) = round(x; sigdigits = 5)
+    _validate_timestep_mode(control)
 
     # Set initial value of Δλ etc
     if transient # λ is time
@@ -328,6 +329,9 @@ function solve_transient!(
         λstart = lambdas[i]
         λend = lambdas[i + 1]
         λ = Float64(λstart)
+        if control.timestep_mode == :teval
+            Δλ = λend - λ
+        end
 
         # Inner loop between two embedding params/time values
         while λ < λend
@@ -376,7 +380,7 @@ function solve_transient!(
                 end
                 if solved
                     Δu = control.delta(state.system, solution, oldsolution, λ, Δλ)
-                    if Δu > Δu_max_factor * Δu_opt
+                    if control.timestep_mode == :adaptive && (Δu > Δu_max_factor * Δu_opt)
                         solved = false
                     end
                     istep_factorize = istep_factorize + 1
@@ -463,6 +467,13 @@ function solve_transient!(
                 end
 
                 if λ < λend
+                    if control.timestep_mode == :teval
+                        Δλ = λend - λ
+                        continue
+                    elseif control.timestep_mode == :fixed
+                        Δλ = min(Δλ_max, λend - λ)
+                        continue
+                    end
                     #  ### account for close last timestep
                     Δλ = min(
                         Δλ_max,
