@@ -173,7 +173,7 @@ export time, region, embedparam
 export calc_divergences
 
 include("vfvm_solvercontrol.jl")
-export fixed_timesteps!, NewtonControl, SolverControl
+export fixed_timesteps!, teval_timesteps!, NewtonControl, SolverControl
 
 include("vfvm_linsolve.jl")
 
