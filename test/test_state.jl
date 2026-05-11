@@ -25,6 +25,8 @@ function main(; unknown_storage = :dense)
 
     control = SolverControl()
     fixed_timesteps!(control, 0.025)
+    @test control.timestep_mode == :fixed
+    @test control.Δu_opt == floatmax()
 
 
     # Allow initial values as result of previous time evolution
@@ -42,9 +44,11 @@ function main(; unknown_storage = :dense)
 
     teval_control = SolverControl()
     teval_timesteps!(teval_control)
+    @test teval_control.timestep_mode == :teval
     teval_control.Δt = 1.0e-3
     tsol_teval = solve(sys; inival = 0.0, times = [0.0, 0.1, 0.2], control = teval_control)
     @test length(tsol_teval.t) == 3
+    @test tsol_teval.t == [0.0, 0.1, 0.2]
 
     fixed_control = SolverControl()
     fixed_timesteps!(fixed_control, 0.03)
