@@ -1,11 +1,14 @@
-# same as example 150 but with two species and a different system. This time the exact solution is not known, thus we compare with finite-difference approximation of the impedance.
-# PDE system on x∈(0,L):
-#   C∂ₜu₁ - ∂ₓ(D∂ₓ(u₁u₂)) + (Ru₁u₂ - u₂) = 0
-#   C∂ₜu₂ - ∂ₓ(D∂ₓu₂)      + Ru₁u₂        = 0
-# consistent with VoronoiFVM convention ∂ₜs(u)+∇⋅j(u)+r(u)=0 and diffusion flux j=-D∇(⋅).
-# Boundary conditions used here:
-#   Dirichlet: u₂(0,t)=1, u₁(0,t)=excitation(t), u₁(L,t)=0
-#   Neumann (natural, zero flux): D∂ₓu₂(L,t)=0
+# # 152: Impedance calculation
+# ([source code](@__SOURCE_URL__))
+
+#  same as example 150 but with two species and a different system. This time the exact solution is not known, thus we compare with finite-difference approximation of the impedance.
+#  PDE system on x∈(0,L):
+#    C∂ₜu₁ - ∂ₓ(D∂ₓ(u₁u₂)) + (Ru₁u₂ - u₂) = 0
+#    C∂ₜu₂ - ∂ₓ(D∂ₓu₂)      + Ru₁u₂        = 0
+#  consistent with VoronoiFVM convention ∂ₜs(u)+∇⋅j(u)+r(u)=0 and diffusion flux j=-D∇(⋅).
+#  Boundary conditions used here:
+#    Dirichlet: u₂(0,t)=1, u₁(0,t)=excitation(t), u₁(L,t)=0
+#    Neumann (natural, zero flux): D∂ₓu₂(L,t)=0
 
 module Example152_Impedance_Multispecies
 
